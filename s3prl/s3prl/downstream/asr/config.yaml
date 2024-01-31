@@ -47,8 +47,8 @@ downstream_expert:
     train_batch_size: 32
     batch_size: 32
     eval_batch_size: 1
-    libri_root: '/groups/public/LibriSpeech'
-    bucket_file: './data/len_for_bucket'
+    libri_root: '/share/data/speech/Datasets/LibriSpeech/LibriSpeech/'
+    bucket_file: '/share/data/speech/hackathon_2022/data/librispeech/'
     dict_path: "./downstream/asr/char.dict"
 
     zero_infinity: True
