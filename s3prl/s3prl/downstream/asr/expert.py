@@ -78,6 +78,7 @@ class DownstreamExpert(nn.Module):
         self.datarc = downstream_expert['datarc']
         self.modelrc = downstream_expert['modelrc']
         self.expdir = expdir
+        self.mode = kwargs['mode']
 
         self.dictionary = Dictionary.load(self.datarc.get("dict_path", str(Path(__file__).parent / "char.dict")))
     
@@ -339,6 +340,16 @@ class DownstreamExpert(nn.Module):
             records['target_tokens'],
             records['target_words'],
         )
+
+        exp_name = self.expdir.split("/")[-1]
+        if self.mode == "evaluate":
+            write_fn = os.path.join(self.expdir, "..", "..", f'{split}_asr_wer.lst')
+            with open(write_fn, "a") as file:
+                file.write(f"{exp_name},{wer}\n")
+        else:
+            write_fn = os.path.join(self.expdir, 'train.log')
+            with open(write_fn, "a") as file:
+                file.write(f"{global_step},{split},{loss},{wer}\n")
 
         logger.add_scalar(f'asr/{split}-loss', loss, global_step=global_step)
         logger.add_scalar(f'asr/{split}-uer', uer, global_step=global_step)
