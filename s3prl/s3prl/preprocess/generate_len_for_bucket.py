@@ -92,6 +92,8 @@ def main():
         SETS = ['train-clean-100', 'train-clean-360', 'train-other-500', 'dev-clean', 'dev-other', 'test-clean', 'test-other']
     elif 'timit' in args.input_data.lower():
         SETS = ['TRAIN', 'TEST']
+    elif 'slue-voxpopuli' in args.input_data.lower():
+        SETS = ["fine-tune", "dev", "test"]
     else:
         raise NotImplementedError
     # change the SETS list to match your dataset, for example:
