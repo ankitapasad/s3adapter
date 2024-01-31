@@ -256,10 +256,9 @@ class Runner():
     def train(self):
         # trainable parameters and train/eval mode
         trainable_models = []
-        trainable_paras = []
+        trainable_params = []
         additional_weight = [] # add prompt paras to optimizer
         for entry in self.all_entries:
-            
             #### add the weight of prefix ###############
             if (self.args.prompt[0] == "prefix" or self.args.prompt[0] == "preinput") and entry.name == "Upstream":
                 for  name, param in entry.model.named_parameters():
@@ -267,7 +266,7 @@ class Runner():
                         additional_weight.append(param)
                         param.requires_grad = True
                         print("Prompt!!",name)
-                trainable_paras += list(additional_weight)
+                trainable_params += list(additional_weight)
 
             #### add adapters ##################
             if self.args.adapter != None and entry.name == "Upstream":
@@ -282,19 +281,20 @@ class Runner():
                         else:
                             param.requires_grad = False
                     
-                trainable_paras += list(additional_weight)
+                trainable_params += list(additional_weight)
                 print("total_adapter param")
                 print("Numbers of adapter PARAMETER: %.2fM" % (adapter_param/1e6))
+                trainable_models.append(entry.model)
 
             elif entry.trainable:
                 entry.model.train()
                 trainable_models.append(entry.model)
-                trainable_paras += list(entry.model.parameters())
+                trainable_params += list(entry.model.parameters())
             else:
                 entry.model.eval()
-
         # optimizer
-        optimizer = self._get_optimizer(trainable_models,[])
+        optimizer = self._get_optimizer(trainable_params,[])
+        # optimizer = self._get_optimizer(trainable_models,[])
 
         # scheduler
         scheduler = None
@@ -361,6 +361,29 @@ class Runner():
 
                     gradient_accumulate_steps = self.config['runner'].get('gradient_accumulate_steps')
                     (loss / gradient_accumulate_steps).backward()
+                    # import pdb; pdb.set_trace()
+                    # print("downstream wt: ", torch.sum(self.downstream.model.projector.weight))
+                    # print("downstream grad: ", torch.sum(self.downstream.model.projector.weight.grad))
+                    # print("upstream loraA wt:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_A))
+                    # # print("upstream loraA grad:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_A.grad))
+                    # print("upstream loraB wt:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_B))
+                    # # print("upstream loraB grad:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_B.grad))
+                    # print("NT upstream wt:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.weight))
+                    # # print("upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight))
+                    # # print("upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight.grad))
+                    # print("NT upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight))
+                    # print("NT upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight.grad))
+                    # total_params = 0
+                    # for param in self.upstream.model.parameters():
+                    #     if param.requires_grad and param.grad is not None:
+                    #         total_params += param.numel()
+                    # print("total upstream param", total_params)
+                    # total_params = 0
+                    # for param in self.downstream.model.parameters():
+                    #     if param.requires_grad and param.grad is not None:
+                    #         total_params += param.numel()
+                    # print("total downstream param", total_params)
+                    # import pdb; pdb.set_trace()
                     del loss
 
                 except RuntimeError as e:
@@ -382,7 +405,7 @@ class Runner():
 
                 # gradient clipping
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    trainable_paras, self.config['runner']['gradient_clipping'])
+                    trainable_params, self.config['runner']['gradient_clipping'])
 
                 # optimize
                 if math.isnan(grad_norm):
@@ -485,7 +508,6 @@ class Runner():
 
     def evaluate(self, split=None, logger=None, global_step=0):
         """evaluate function will always be called on a single process even during distributed training"""
-
         # When this member function is called directly by command line
         not_during_training = split is None and logger is None and global_step == 0
         if not_during_training:
@@ -512,7 +534,6 @@ class Runner():
         dataloader = self.downstream.model.get_dataloader(split)
         evaluate_ratio = float(self.config["runner"].get("evaluate_ratio", 1))
         evaluate_steps = round(len(dataloader) * evaluate_ratio)
-
         batch_ids = []
         records = defaultdict(list)
         for batch_id, (wavs, *others) in enumerate(tqdm(dataloader, dynamic_ncols=True, desc=split, total=evaluate_steps)):

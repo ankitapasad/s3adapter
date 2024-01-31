@@ -851,6 +851,8 @@ class MultiheadAttention(nn.Module):
             self.q_proj = quant_noise(
                 lora.Linear(embed_dim, embed_dim, r=8), q_noise, qn_block_size
             )
+            # self.k_proj = lora.Linear(self.kdim, embed_dim, r=8)
+            # self.q_proj = lora.Linear(embed_dim, embed_dim, r=8)
         else:
             self.k_proj = quant_noise(
                 nn.Linear(self.kdim, embed_dim, bias=bias), q_noise, qn_block_size
@@ -1098,6 +1100,7 @@ class MultiheadAttention(nn.Module):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
+        ret_orig: bool = True,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -1156,29 +1159,30 @@ class MultiheadAttention(nn.Module):
                 )
 
             else:
-                return F.multi_head_attention_forward(
-                    query,
-                    key,
-                    value,
-                    self.embed_dim,
-                    self.num_heads,
-                    torch.empty([0]),
-                    torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)),
-                    self.bias_k,
-                    self.bias_v,
-                    self.add_zero_attn,
-                    self.dropout_module.p,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    self.training or self.dropout_module.apply_during_inference,
-                    key_padding_mask,
-                    need_weights,
-                    attn_mask,
-                    use_separate_proj_weight=True,
-                    q_proj_weight=self.q_proj.weight,
-                    k_proj_weight=self.k_proj.weight,
-                    v_proj_weight=self.v_proj.weight,
-                )
+                if ret_orig:
+                    return F.multi_head_attention_forward(
+                        query,
+                        key,
+                        value,
+                        self.embed_dim,
+                        self.num_heads,
+                        torch.empty([0]),
+                        torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)),
+                        self.bias_k,
+                        self.bias_v,
+                        self.add_zero_attn,
+                        self.dropout_module.p,
+                        self.out_proj.weight,
+                        self.out_proj.bias,
+                        self.training or self.dropout_module.apply_during_inference,
+                        key_padding_mask,
+                        need_weights,
+                        attn_mask,
+                        use_separate_proj_weight=True,
+                        q_proj_weight=self.q_proj.weight,
+                        k_proj_weight=self.k_proj.weight,
+                        v_proj_weight=self.v_proj.weight,
+                    )
 
         if incremental_state is not None:
             saved_state = self._get_input_buffer(incremental_state)
@@ -2363,6 +2367,12 @@ class Wav2Vec2Config:
     )
     fp16: bool = field(default=False, metadata={"help": "If fp16 is being used"})
 
+    # top k adapter modules
+    top_k: int = field(
+        default=-1,
+        metadata={"help": "number of top layers for adapter placement"},
+    )
+
 
 class Wav2Vec2Model(nn.Module):
     def __init__(self, cfg: Wav2Vec2Config):
@@ -3278,7 +3288,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
             dropout=attention_dropout,
             self_attention=True,
         )
-
+        
         if 'adapter' in sys.argv[-1] and 'houlsby' not in sys.argv[-1] and 'lora' not in sys.argv[-1]:
             print('AdapterBias!!!')
             self.adapter_vector = nn.Parameter(torch.ones((768), requires_grad=True))
@@ -3323,6 +3333,11 @@ class TransformerSentenceEncoderLayer(nn.Module):
         """
         residual = x
 
+        if 'lora' in sys.argv[-1]:
+            ret_orig = False
+        else:
+            ret_orig = True
+
         if self.layer_norm_first:
             x = self.self_attn_layer_norm(x)
             x, attn = self.self_attn(
@@ -3332,6 +3347,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 key_padding_mask=self_attn_padding_mask,
                 attn_mask=self_attn_mask,
                 need_weights=False,
+                ret_orig=ret_orig,
             )
             x = self.dropout1(x)
             x = residual + x
@@ -3369,6 +3385,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 value=x,
                 key_padding_mask=self_attn_padding_mask,
                 need_weights=False,
+                ret_orig=ret_orig,
             )
 
             x = self.dropout1(x)

@@ -88,13 +88,14 @@ def get_AdamW(model_params, lr=2e-4, **kwargs):
 
 
 def get_TorchOptim(model_params, torch_optim_name, **kwargs):
-    params = []
-    for m in model_params:
-        params += list(m.parameters())
+    # params = []
+    # for m in model_params:
+    #     params += list(m.parameters())
     Opt_class = getattr(torch.optim, torch_optim_name)
 
     kwargs.pop('total_steps')
-    optim = Opt_class(params, **kwargs)
+    optim = Opt_class(model_params, **kwargs)
+    # optim = Opt_class(params, **kwargs)
     return optim
 
 
