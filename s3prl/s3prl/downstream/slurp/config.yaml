@@ -1,0 +1,39 @@
+runner:
+  total_steps: 200000
+  gradient_clipping: 1
+  gradient_accumulate_steps: 1
+
+  log_step: 100
+  eval_step: 5000
+  save_step: 250
+  max_keep: 1
+  eval_dataloaders:
+    - dev
+    - test
+
+optimizer:
+  name: TorchOptim
+  torch_optim_name: Adam
+  lr: 1.0e-4
+
+# comment the whole scheduler config block
+# to disable learning rate scheduling
+# scheduler:
+#   name: linear_schedule_with_warmup
+#   num_warmup_steps: 1000
+
+downstream_expert:
+  datarc:
+    file_path: /share/data/speech/hackathon_2022/data/slurp/ # /groups/public/benchmark/fluent_speech_commands_dataset
+    dict_path: downstream/slurp/class_dict.json
+    classname: scenario
+    num_workers: 6
+    train_batch_size: 24
+    eval_batch_size: 16
+
+  modelrc:
+    use_proj: True
+    projector_dim: 256
+    select: UtteranceLevel
+    UtteranceLevel:
+      pooling: MeanPooling
