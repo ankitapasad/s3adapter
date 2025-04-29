@@ -795,6 +795,8 @@ class MultiheadAttention(nn.Module):
         encoder_decoder_attention=False,
         q_noise=0.0,
         qn_block_size=8,
+        lora_dim=8,
+        add_lora=False,
         # TODO: pass in config rather than string.
         # config defined in xformers.components.attention.AttentionConfig
         xformers_att_config: Optional[str] = None,
@@ -822,6 +824,7 @@ class MultiheadAttention(nn.Module):
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
+        self.lora_dim = lora_dim
 
         self.num_heads = num_heads
         self.dropout_module = FairseqDropout(
@@ -843,7 +846,7 @@ class MultiheadAttention(nn.Module):
 
 
         ####LoRA####
-        if 'lora' in sys.argv[-1]:
+        if 'lora' in sys.argv[-1] and add_lora:
             # self.k_proj = quant_noise(
             #     lora.Linear(self.kdim, embed_dim, r=8), q_noise, qn_block_size
             # )
@@ -851,8 +854,8 @@ class MultiheadAttention(nn.Module):
             # self.q_proj = quant_noise(
             #     lora.Linear(embed_dim, embed_dim, r=8), q_noise, qn_block_size
             # )
-            self.k_proj = lora.Linear(self.kdim, embed_dim, r=8)
-            self.q_proj = lora.Linear(embed_dim, embed_dim, r=8)
+            self.k_proj = lora.Linear(self.kdim, embed_dim, r=self.lora_dim)
+            self.q_proj = lora.Linear(embed_dim, embed_dim, r=self.lora_dim)
         else:
             self.k_proj = quant_noise(
                 nn.Linear(self.kdim, embed_dim, bias=bias), q_noise, qn_block_size
@@ -2368,6 +2371,31 @@ class Wav2Vec2Config:
     )
     fp16: bool = field(default=False, metadata={"help": "If fp16 is being used"})
 
+    # top k adapter modules
+    peft_layer_lst: str = field(
+        default="all",
+        metadata={
+            "help": "string describing layers where peft modules are to be placed; either \"all\" or in form of a python list"
+            "example: [2, 3, 12]"
+        },
+    )
+    top_k: int = field(
+        default=-1,
+        metadata={"help": "number of top layers for adapter placement"},
+    )
+    adapter_dim: int = field(
+        default=32,
+        metadata={"help": "bottleneck dim for Houlsby adapter"}
+    )
+    lora_dim: int = field(
+        default=8,
+        metadata={"help": "bottleneck dim for LoRA layer"}
+    )
+    houlsby_ln: bool = field(
+        default=False, metadata={"help": "layernorm in adapter module"}
+    )
+
+
 
 class Wav2Vec2Model(nn.Module):
     def __init__(self, cfg: Wav2Vec2Config):
@@ -3006,8 +3034,12 @@ def make_conv_pos(e, k, g):
 
 
 class TransformerEncoder(nn.Module):
-    def build_encoder_layer(self, args: Wav2Vec2Config):
+    def build_encoder_layer(self, layer_idx, args: Wav2Vec2Config):
         if args.layer_type == "transformer":
+            if args.peft_layer_lst == "all" or layer_idx in eval(args.peft_layer_lst):
+                add_lora = True
+            else:
+                add_lora = False
             layer = TransformerSentenceEncoderLayer(
                 embedding_dim=self.embedding_dim,
                 ffn_embedding_dim=args.encoder_ffn_embed_dim,
@@ -3017,6 +3049,10 @@ class TransformerEncoder(nn.Module):
                 activation_dropout=args.activation_dropout,
                 activation_fn=args.activation_fn,
                 layer_norm_first=args.layer_norm_first,
+                lora_dim=args.lora_dim,
+                adapter_dim=args.adapter_dim,
+                houlsby_ln=args.houlsby_ln,
+                add_lora=add_lora
             )
         elif args.layer_type == "conformer":
             layer = ConformerWav2Vec2EncoderLayer(
@@ -3077,7 +3113,7 @@ class TransformerEncoder(nn.Module):
             )
 
         self.layers = nn.ModuleList(
-            [self.build_encoder_layer(args) for _ in range(args.encoder_layers)]
+            [self.build_encoder_layer(layer_idx, args) for layer_idx in range(1, args.encoder_layers+1)]
         )
         self.layer_norm_first = args.layer_norm_first
         self.layer_norm = LayerNorm(self.embedding_dim)
@@ -3267,6 +3303,10 @@ class TransformerSentenceEncoderLayer(nn.Module):
         activation_dropout: float = 0.1,
         activation_fn: str = "relu",
         layer_norm_first: bool = False,
+        adapter_dim: int = 32,
+        lora_dim: int = 8,
+        houlsby_ln: bool = False,
+        add_lora: bool = False,
     ) -> None:
 
         super().__init__()
@@ -3274,6 +3314,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
         self.embedding_dim = embedding_dim
         self.dropout = dropout
         self.activation_dropout = activation_dropout
+        self.adapter_dim = adapter_dim
+        self.houlsby_ln = houlsby_ln
 
         # Initialize blocks
         self.activation_fn = get_activation_fn(activation_fn)
@@ -3282,6 +3324,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
             num_attention_heads,
             dropout=attention_dropout,
             self_attention=True,
+            lora_dim=lora_dim,
+            add_lora=add_lora,
         )
         
         if 'adapter' in sys.argv[-1] and 'houlsby' not in sys.argv[-1] and 'lora' not in sys.argv[-1]:
@@ -3294,7 +3338,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 nn.GELU(),
                 nn.Linear(32, self.embedding_dim),
             )
-        elif 'lora' in sys.argv[-1]:
+        elif 'lora' in sys.argv[-1] and add_lora:
             print('LoRA!!!')
         else:
             print('Original Hubert!!!')

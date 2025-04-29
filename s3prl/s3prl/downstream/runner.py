@@ -166,11 +166,13 @@ class Runner():
         if is_initialized() and get_rank() > 0:
             torch.distributed.barrier()
             upstream_refresh = False
-
         model = Upstream(
             ckpt = ckpt_path,
             model_config = self.args.upstream_model_config,
             refresh = upstream_refresh,
+            adapter_dim = self.args.adapter_dim,
+            lora_dim = self.args.lora_dim,
+            houlsby_ln = self.args.houlsby_ln,
         ).to(self.args.device)
 
         if is_initialized() and get_rank() == 0:
@@ -272,15 +274,15 @@ class Runner():
             if self.args.adapter != None and entry.name == "Upstream":
                 adapter_param = 0
                 for  name, param in entry.model.named_parameters():
-                        if "adapter" in name or 'lora' in name:
-                            additional_weight.append(param)
-                            param.requires_grad = True
-                            print("Adapter!!",name)
-                            adapter_param += param.nelement() 
-                            #print("Numbers of PARAMETER: %.2fM" % (total/1e6))
-                        else:
-                            param.requires_grad = False
-                    
+                    if "adapter" in name or 'lora' in name:
+                        additional_weight.append(param)
+                        param.requires_grad = True
+                        print("Adapter!!",name)
+                        adapter_param += param.nelement() 
+                        #print("Numbers of PARAMETER: %.2fM" % (total/1e6))
+                    else:
+                        param.requires_grad = False
+                
                 trainable_params += list(additional_weight)
                 print("total_adapter param")
                 print("Numbers of adapter PARAMETER: %.2fM" % (adapter_param/1e6))
@@ -372,7 +374,7 @@ class Runner():
                     # # print("upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight))
                     # # print("upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight.grad))
                     # print("NT upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight))
-                    # print("NT upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight.grad))
+                    # # print("NT upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight.grad))
                     # total_params = 0
                     # for param in self.upstream.model.parameters():
                     #     if param.requires_grad and param.grad is not None:

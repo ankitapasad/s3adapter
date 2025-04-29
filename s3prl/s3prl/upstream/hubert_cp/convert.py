@@ -33,10 +33,11 @@ def load_and_convert_fairseq_ckpt(fairseq_source: str, output_path: str = None):
         Path(output_path).parent.mkdir(exist_ok=True, parents=True)
         torch.save(output_state, output_path)
 
-
-def load_converted_model(ckpt: str):
+def load_converted_model(ckpt: str, adapter_args):
     ckpt_state = torch.load(ckpt, map_location="cpu")
-
+    for key in ['adapter_dim', 'lora_dim', 'houlsby_ln', 'peft_layer_lst']:
+        if key in adapter_args:
+            ckpt_state['model_cfg'][key] = adapter_args[key]
 
     for required_key in [
         "task_cfg",
@@ -48,14 +49,11 @@ def load_converted_model(ckpt: str):
             raise ValueError(
                 f"{ckpt} is not a valid checkpoint since the required key: {required_key} is missing"
             )
-
     task_cfg = merge_with_parent(HubertPretrainingConfig, ckpt_state["task_cfg"])
     model_cfg = merge_with_parent(HubertConfig, ckpt_state["model_cfg"])
     model = HubertModel(model_cfg, task_cfg, ckpt_state["dictionaries_symbols"])
-
     model.load_state_dict(ckpt_state["model_weight"], strict = False)
     return model, task_cfg
-
 
 if __name__ == "__main__":
     import argparse

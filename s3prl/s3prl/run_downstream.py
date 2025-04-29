@@ -94,6 +94,9 @@ def get_downstream_args():
     
     # add adapter
     parser.add_argument('--adapter', default="None", type=str)
+    parser.add_argument('--adapter_dim', default=32, type=int)
+    parser.add_argument('--lora_dim', default=8, type=int)
+    parser.add_argument('--houlsby_ln', default=False, type=bool)
 
     ### prompt tuning
     parser.add_argument('--prompt', nargs=1, default="None", choices=["None", "prefix", "preinput"])

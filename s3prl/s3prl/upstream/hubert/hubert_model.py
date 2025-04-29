@@ -277,6 +277,19 @@ class HubertConfig:
     )
     fp16: bool = field(default=False, metadata={"help": "If fp16 is being used"})
 
+    # adapter
+    adapter_dim: int = field(
+        default=32,
+        metadata={"help": "bottleneck dim for Houlsby adapter"}
+    )
+    lora_dim: int = field(
+        default=8,
+        metadata={"help": "bottleneck dim for LoRA layer"}
+    )
+    houlsby_ln: bool = field(
+        default=False, metadata={"help": "layernorm in adapter module"}
+    )
+
 
 class HubertModel(torch.nn.Module):
     def __init__(
@@ -287,10 +300,8 @@ class HubertModel(torch.nn.Module):
     ) -> None:
         super().__init__()
         logger.info(f"HubertModel Config: {cfg}")
-
         feature_enc_layers = eval(cfg.conv_feature_layers)  # noqa
         self.embed = feature_enc_layers[-1][0]
-
         self.feature_extractor = ConvFeatureExtractionModel(
             conv_layers=feature_enc_layers,
             dropout=0.0,

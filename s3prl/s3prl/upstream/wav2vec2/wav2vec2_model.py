@@ -795,6 +795,7 @@ class MultiheadAttention(nn.Module):
         encoder_decoder_attention=False,
         q_noise=0.0,
         qn_block_size=8,
+        lora_dim=8,
         # TODO: pass in config rather than string.
         # config defined in xformers.components.attention.AttentionConfig
         xformers_att_config: Optional[str] = None,
@@ -822,7 +823,7 @@ class MultiheadAttention(nn.Module):
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
-
+        self.lora_dim = lora_dim
         self.num_heads = num_heads
         self.dropout_module = FairseqDropout(
             dropout, module_name=self.__class__.__name__
@@ -845,11 +846,11 @@ class MultiheadAttention(nn.Module):
         ####LoRA####
         if 'lora' in sys.argv[-1]:
             self.k_proj = quant_noise(
-                lora.Linear(self.kdim, embed_dim, r=8), q_noise, qn_block_size
+                lora.Linear(self.kdim, embed_dim, r=self.lora_dim), q_noise, qn_block_size
             )
 
             self.q_proj = quant_noise(
-                lora.Linear(embed_dim, embed_dim, r=8), q_noise, qn_block_size
+                lora.Linear(embed_dim, embed_dim, r=self.lora_dim), q_noise, qn_block_size
             )
             # self.k_proj = lora.Linear(self.kdim, embed_dim, r=8)
             # self.q_proj = lora.Linear(embed_dim, embed_dim, r=8)
@@ -2372,6 +2373,17 @@ class Wav2Vec2Config:
         default=-1,
         metadata={"help": "number of top layers for adapter placement"},
     )
+    adapter_dim: int = field(
+        default=32,
+        metadata={"help": "bottleneck dim for Houlsby adapter"}
+    )
+    lora_dim: int = field(
+        default=8,
+        metadata={"help": "bottleneck dim for LoRA layer"}
+    )
+    houlsby_ln: bool = field(
+        default=False, metadata={"help": "layernorm in adapter module"}
+    )
 
 
 class Wav2Vec2Model(nn.Module):
@@ -3022,6 +3034,9 @@ class TransformerEncoder(nn.Module):
                 activation_dropout=args.activation_dropout,
                 activation_fn=args.activation_fn,
                 layer_norm_first=args.layer_norm_first,
+                lora_dim=args.lora_dim,
+                adapter_dim=args.adapter_dim,
+                houlsby_ln=args.houlsby_ln
             )
         elif args.layer_type == "conformer":
             layer = ConformerWav2Vec2EncoderLayer(
@@ -3272,6 +3287,9 @@ class TransformerSentenceEncoderLayer(nn.Module):
         activation_dropout: float = 0.1,
         activation_fn: str = "relu",
         layer_norm_first: bool = False,
+        adapter_dim: int = 32,
+        lora_dim: int = 8,
+        houlsby_ln: bool = False,
     ) -> None:
 
         super().__init__()
@@ -3279,6 +3297,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
         self.embedding_dim = embedding_dim
         self.dropout = dropout
         self.activation_dropout = activation_dropout
+        self.adapter_dim = adapter_dim
+        self.houlsby_ln = houlsby_ln
 
         # Initialize blocks
         self.activation_fn = get_activation_fn(activation_fn)
@@ -3287,6 +3307,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
             num_attention_heads,
             dropout=attention_dropout,
             self_attention=True,
+            lora_dim=lora_dim
         )
         
         if 'adapter' in sys.argv[-1] and 'houlsby' not in sys.argv[-1] and 'lora' not in sys.argv[-1]:
@@ -3294,11 +3315,19 @@ class TransformerSentenceEncoderLayer(nn.Module):
             self.adapter_vector = nn.Parameter(torch.ones((768), requires_grad=True))
             self.adapter_alpha = nn.Linear(ffn_embedding_dim, 1) 
         elif 'houlsby' in sys.argv[-1]:
-            self.adapter = nn.Sequential(
-                nn.Linear(self.embedding_dim, 32),
-                nn.GELU(),
-                nn.Linear(32, self.embedding_dim),
-            )
+            if self.houlsby_ln:
+                self.adapter = nn.Sequential(
+                    nn.Linear(self.embedding_dim, self.adapter_dim),
+                    nn.GELU(),
+                    nn.Linear(self.adapter_dim, self.embedding_dim),
+                    LayerNorm(self.embedding_dim)
+                )
+            else:
+                self.adapter = nn.Sequential(
+                    nn.Linear(self.embedding_dim, self.adapter_dim),
+                    nn.GELU(),
+                    nn.Linear(self.adapter_dim, self.embedding_dim),
+                )
         elif 'lora' in sys.argv[-1]:
             print('LoRA!!!')
         else:

@@ -171,6 +171,10 @@ class Runner():
             ckpt = ckpt_path,
             model_config = self.args.upstream_model_config,
             refresh = upstream_refresh,
+            adapter_dim = self.args.adapter_dim,
+            lora_dim = self.args.lora_dim,
+            houlsby_ln = self.args.houlsby_ln,
+            peft_layer_lst = self.args.peft_layer_lst
         ).to(self.args.device)
 
         if is_initialized() and get_rank() == 0:
@@ -362,7 +366,6 @@ class Runner():
 
                     gradient_accumulate_steps = self.config['runner'].get('gradient_accumulate_steps')
                     (loss / gradient_accumulate_steps).backward()
-                    # import pdb; pdb.set_trace()
                     # print("downstream wt: ", torch.sum(self.downstream.model.projector.weight))
                     # print("downstream grad: ", torch.sum(self.downstream.model.projector.weight.grad))
                     # print("upstream loraA wt:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_A))
@@ -371,10 +374,10 @@ class Runner():
                     # print("upstream loraB grad:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.lora_B.grad))
                     # print("NT upstream wt:", torch.sum(self.upstream.model.model.encoder.layers[11].self_attn.k_proj.weight))
                     # import pdb; pdb.set_trace()
-                    # # print("upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight))
-                    # # print("upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight.grad))
-                    # print("NT upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight))
-                    # print("NT upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight.grad))
+                    # print("adapter wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight))
+                    # print("adapter grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].adapter[0].weight.grad))
+                    # print("backbone upstream wt: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight))
+                    # print("backbone upstream grad: ", torch.sum(self.upstream.model.model.encoder.layers[9].fc1.weight.grad))
                     # total_params = 0
                     # for param in self.upstream.model.parameters():
                     #     if param.requires_grad and param.grad is not None:

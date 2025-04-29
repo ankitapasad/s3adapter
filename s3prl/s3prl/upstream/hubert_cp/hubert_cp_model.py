@@ -277,6 +277,25 @@ class HubertConfig:
     )
     fp16: bool = field(default=False, metadata={"help": "If fp16 is being used"})
 
+    # adapter
+    peft_layer_lst: str = field(
+        default="all",
+        metadata={
+            "help": "string describing layers where peft modules are to be placed; either \"all\" or in form of a python list"
+            "example: [2, 3, 12]"
+        },
+    )
+    adapter_dim: int = field(
+        default=32,
+        metadata={"help": "bottleneck dim for Houlsby adapter"}
+    )
+    lora_dim: int = field(
+        default=8,
+        metadata={"help": "bottleneck dim for LoRA layer"}
+    )
+    houlsby_ln: bool = field(
+        default=False, metadata={"help": "layernorm in adapter module"}
+    )
 
 class HubertModel(torch.nn.Module):
     def __init__(
@@ -287,7 +306,6 @@ class HubertModel(torch.nn.Module):
     ) -> None:
         super().__init__()
         logger.info(f"HubertModel Config: {cfg}")
-
         feature_enc_layers = eval(cfg.conv_feature_layers)  # noqa
         self.embed = feature_enc_layers[-1][0]
 
